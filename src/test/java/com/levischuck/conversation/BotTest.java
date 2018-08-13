@@ -2,6 +2,7 @@ package com.levischuck.conversation;
 
 import com.levischuck.conversation.core.ConverseResult;
 import com.levischuck.conversation.core.MemorizingConversation;
+import com.levischuck.conversation.impl.Builder;
 import com.levischuck.conversation.impl.MemorizedContext;
 import com.levischuck.conversation.impl.PersistingConversation;
 import com.levischuck.conversation.impl.SimpleConversation;
@@ -112,5 +113,30 @@ public class BotTest {
         Assertions.assertEquals("Magical indeed.", context.lastResponse);
         Assertions.assertEquals(DialogRef.Root, context.getCurrentDialog());
         context.clear();
+    }
+
+    @Test
+    public void badBuilderBot() {
+        Assertions.assertThrows(IllegalStateException.class, () -> {
+            Builder.bot().endBot();
+        });
+    }
+    @Test
+    public void badBuilderDialog() {
+        Assertions.assertThrows(IllegalStateException.class, () -> {
+            Builder.bot().dialog(new Object()).endDialog().endBot();
+        });
+    }
+    @Test
+    public void badBuilderNullDialog() {
+        Assertions.assertThrows(NullPointerException.class, () -> {
+            Builder.bot().dialog(null).step("Something", (c, m) -> new ConverseResult<>(c, 1, 2)).endDialog().endBot();
+        });
+    }
+    @Test
+    public void badBuilderNullStep() {
+        Assertions.assertThrows(NullPointerException.class, () -> {
+            Builder.bot().dialog("Something").step(null, (c, m) -> new ConverseResult<>(c, 1, 2)).endDialog().endBot();
+        });
     }
 }

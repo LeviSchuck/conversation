@@ -41,7 +41,7 @@ public class Builder {
 
         private Bot<C, M, D, S> build() {
             if (first == null) {
-                throw new RuntimeException("Invalid bot builder, no dialogs");
+                throw new IllegalStateException("Invalid bot builder, no dialogs");
             }
             return new Bot<C, M, D, S>() {
                 @Override
@@ -86,7 +86,7 @@ public class Builder {
 
         private Dialog<C, M, D, S> build() {
             if (first == null) {
-                throw new RuntimeException("Invalid dialog builder, no steps");
+                throw new IllegalStateException("Invalid dialog builder, no steps");
             }
             return new Dialog<C, M, D, S>() {
                 @Override
