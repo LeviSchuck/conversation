@@ -14,10 +14,6 @@ public class SimpleConversation<C, M, D, S> implements Conversation<C, M, D, S> 
         this.bot = bot;
     }
 
-    public SimpleConversation(Function<Builder.BotBuilder<C, M, D, S>, Builder.BotBuilder<C, M, D, S>> builder) {
-        this(builder.apply(Builder.bot()).endBot());
-    }
-
     @Override
     public ConverseResult<C, M, D, S> converse(C context, M message, D dialogDescriptor, S stepDescriptor) {
         if (dialogDescriptor == null) {

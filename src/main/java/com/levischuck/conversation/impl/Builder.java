@@ -1,15 +1,26 @@
 package com.levischuck.conversation.impl;
 
-import com.levischuck.conversation.core.Bot;
-import com.levischuck.conversation.core.Dialog;
-import com.levischuck.conversation.core.Step;
+import com.levischuck.conversation.core.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 public class Builder {
     public static <C, M, D, S> BotBuilder<C, M, D, S> bot() {
         return new BotBuilder<>();
+    }
+
+    public static <C, M, D, S> Conversation<C, M, D, S> simple(
+            Function<BotBuilder<C, M, D, S>, BotBuilder<C, M, D, S>> builder
+    ) {
+        return new SimpleConversation<>(builder.apply(Builder.bot()).endBot());
+    }
+
+    public static <C extends MemorizingContext<C, D, S>, M, D, S> MemorizingConversation<C, M, D, S> memorized(
+            Function<BotBuilder<C, M, D, S>, BotBuilder<C, M, D, S>> builder
+    ) {
+        return new PersistingConversation<>(simple(builder));
     }
 
     public static class BotBuilder<C, M, D, S> {

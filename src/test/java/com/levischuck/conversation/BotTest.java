@@ -40,44 +40,35 @@ public class BotTest {
         String message;
     }
 
-    private static class TestConversation extends PersistingConversation<Context, Message, DialogRef, StepRef> {
-        public TestConversation() {
-            super(new SimpleConversation<>(b -> b.dialog(DialogRef.Root)
-                    .step(StepRef.Root, (c, m) -> {
-                        if ("Hello".equalsIgnoreCase(m.message)) {
-                            c.reply("Hello");
-                            return new ConverseResult<>(c, DialogRef.Root, StepRef.Hello);
-                        }
-                        c.reply("Unhandled");
-                        return new ConverseResult<>(c, DialogRef.Root, StepRef.Root);
-                    })
-                    .step(StepRef.Hello, (c, m) -> {
-                        c.reply("I hear that " + m.message);
-                        if ("Magic".equalsIgnoreCase(m.message)) {
-                            return new ConverseResult<>(c, DialogRef.Magic, null);
-                        }
-                        return new ConverseResult<>(c, DialogRef.Root, StepRef.Root);
-                    })
-                    .endDialog()
-                    .dialog(DialogRef.Magic)
-                    .step(StepRef.Root, (c, m) -> {
-                        c.reply("Magical indeed.");
-                        return new ConverseResult<>(c, DialogRef.Root, null);
-                    })
-                    .endDialog()
-            ));
-        }
-
-        @Override
-        public ConverseResult<Context, Message, DialogRef, StepRef> converse(Context context, Message message) {
-            System.out.println("Input: " + message.message);
-            return super.converse(context, message);
-        }
+    private MemorizingConversation<Context, Message, DialogRef, StepRef> makeTestConversation() {
+        return Builder.memorized(b -> b.dialog(DialogRef.Root)
+                .step(StepRef.Root, (c, m) -> {
+                    if ("Hello".equalsIgnoreCase(m.message)) {
+                        c.reply("Hello");
+                        return new ConverseResult<>(c, DialogRef.Root, StepRef.Hello);
+                    }
+                    c.reply("Unhandled");
+                    return new ConverseResult<>(c, DialogRef.Root, StepRef.Root);
+                })
+                .step(StepRef.Hello, (c, m) -> {
+                    c.reply("I hear that " + m.message);
+                    if ("Magic".equalsIgnoreCase(m.message)) {
+                        return new ConverseResult<>(c, DialogRef.Magic, null);
+                    }
+                    return new ConverseResult<>(c, DialogRef.Root, StepRef.Root);
+                })
+                .endDialog()
+                .dialog(DialogRef.Magic)
+                .step(StepRef.Root, (c, m) -> {
+                    c.reply("Magical indeed.");
+                    return new ConverseResult<>(c, DialogRef.Root, null);
+                })
+                .endDialog());
     }
 
     @Test
     public void converseHello() {
-        MemorizingConversation<Context, Message, DialogRef, StepRef> conversation = new TestConversation();
+        MemorizingConversation<Context, Message, DialogRef, StepRef> conversation = makeTestConversation();
         Context context = new Context();
         conversation.converse(context, new Message("Hello"));
         Assertions.assertEquals("Hello", context.lastResponse);
@@ -89,7 +80,7 @@ public class BotTest {
 
     @Test
     public void converseUnhandled() {
-        MemorizingConversation<Context, Message, DialogRef, StepRef> conversation = new TestConversation();
+        MemorizingConversation<Context, Message, DialogRef, StepRef> conversation = makeTestConversation();
         Context context = new Context();
         conversation.converse(context, new Message("Blah"));
         Assertions.assertEquals("Unhandled", context.lastResponse);
@@ -98,7 +89,7 @@ public class BotTest {
 
     @Test
     public void converseMagical() {
-        MemorizingConversation<Context, Message, DialogRef, StepRef> conversation = new TestConversation();
+        MemorizingConversation<Context, Message, DialogRef, StepRef> conversation = makeTestConversation();
         Context context = new Context();
         conversation.converse(context, new Message("Hello"));
         Assertions.assertEquals("Hello", context.lastResponse);
