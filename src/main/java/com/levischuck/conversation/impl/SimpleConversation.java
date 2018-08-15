@@ -2,8 +2,6 @@ package com.levischuck.conversation.impl;
 
 import com.levischuck.conversation.core.*;
 
-import java.util.function.Function;
-
 public class SimpleConversation<C, M, D, S> implements Conversation<C, M, D, S> {
     private final Bot<C, M, D, S> bot;
 
@@ -16,7 +14,9 @@ public class SimpleConversation<C, M, D, S> implements Conversation<C, M, D, S> 
 
     @Override
     public ConverseResult<C, M, D, S> converse(C context, M message, D dialogDescriptor, S stepDescriptor) {
+        boolean ignoreStepDescriptor = false;
         if (dialogDescriptor == null) {
+            ignoreStepDescriptor = true;
             dialogDescriptor = bot.rootDialog();
             if (dialogDescriptor == null) {
                 throw new NullPointerException("No root dialog descriptor on bot " + bot);
@@ -26,7 +26,7 @@ public class SimpleConversation<C, M, D, S> implements Conversation<C, M, D, S> 
         if (dialog == null) {
             throw new NullPointerException("Dialog " + dialogDescriptor + " could not be loaded from bot " + bot);
         }
-        if (stepDescriptor == null) {
+        if (ignoreStepDescriptor || stepDescriptor == null) {
             stepDescriptor = dialog.rootStep();
             if (stepDescriptor == null) {
                 throw new NullPointerException("No root step on dialog " + dialog);
