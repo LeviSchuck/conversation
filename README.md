@@ -15,12 +15,12 @@ pointer to the first `Step`. Upon a new message given to a `Bot`, it indexes the
 `Dialog` reference, defaulting to the `Bot`'s `rootDialog`, then indexes the `Step`
 reference--a step is executed once per message. Steps cannot be chained within a
 `converse` action. `Step` implementations take a `context` and a `message` and are
-expected to return a `ConverseResult` of the new context (may be the same by
+expected to return a `StepResult` of the new context (may be the same by
 reference mutated, or a new value of the same type), the next `Dialog` reference,
 and the next `Step` reference. `Dialog` and `Step` references are generically
 typed to the `Conversation`. However, use of a `SimpleConversation` requires the
 caller maintain and remember what the next `Dialog` and `Step` is with the
-`ConverseResult` from `converse`. As a a helper, an interface is added for a
+`StepResult` from `converse`. As a a helper, an interface is added for a
 `MemorizingConversation` which uses a `MemorizingContext` such that the next
 `Dialog` and next `Step` are persisted to the context such that `converse` takes
 a `context` and a `message`. It will derive the `Dialog` and `Step` references
