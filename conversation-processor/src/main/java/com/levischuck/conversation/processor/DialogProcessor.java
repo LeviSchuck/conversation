@@ -2,11 +2,14 @@ package com.levischuck.conversation.processor;
 
 import com.google.auto.service.AutoService;
 import com.levischuck.conversation.annotations.*;
+import com.levischuck.conversation.core.GenResult;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.MirroredTypeException;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import java.util.*;
 
@@ -82,7 +85,8 @@ public class DialogProcessor extends AbstractProcessor {
                     if (dialogMethod.getKind() == ElementKind.METHOD) {
                         ExecutableElement executableStepMethod = (ExecutableElement)dialogMethod;
                         String methodName = executableStepMethod.getSimpleName().toString();
-                        StepDescription stepDescription = new StepDescription(methodName, executableStepMethod, dialogStep);
+                        TypeMirror returnType = executableStepMethod.getReturnType();
+                        StepDescription stepDescription = new StepDescription(methodName, executableStepMethod, dialogStep, returnType);
 
                         // TODO more validation
 
@@ -91,6 +95,36 @@ public class DialogProcessor extends AbstractProcessor {
                             fatal = true;
                             continue;
                         }
+
+                        if (TypeKind.DECLARED == returnType.getKind()) {
+                            DeclaredType declaredReturnType = (DeclaredType)returnType;
+                            TypeElement declaredReturnTypeElement = (TypeElement)declaredReturnType.asElement();
+                            if (!declaredReturnTypeElement.getQualifiedName().toString().equals(GenResult.class.getTypeName())) {
+                                System.err.print("DialogStep " + dialogAnnotated + "::" + methodName);
+                                System.err.println(" has an unsupported return type: " + returnType);
+                                fatal = true;
+                                continue;
+                            }
+
+                            if (!declaredReturnType.getTypeArguments().isEmpty()) {
+                                TypeMirror contextType = declaredReturnType.getTypeArguments().get(0);
+                                if (dialogGroup.context == null) {
+                                    dialogGroup.context = contextType;
+                                } else if (!dialogGroup.context.equals(contextType)) {
+                                    System.err.print("GenResult<C> " + dialogAnnotated + "::" + methodName);
+                                    System.err.print(" has type " + contextType + " but the dialog already has a type of ");
+                                    System.err.println(dialogGroup.context);
+                                    fatal = true;
+                                    continue;
+                                }
+                            }
+                        } else if (TypeKind.VOID != returnType.getKind()) {
+                            System.err.print("DialogStep " + dialogAnnotated + "::" + methodName);
+                            System.err.println(" has an unsupported return type: " + returnType);
+                            fatal = true;
+                            continue;
+                        }
+
 
                         boolean fatalStep = false;
                         int index = 0;
@@ -173,6 +207,7 @@ public class DialogProcessor extends AbstractProcessor {
             }
 
             for (DialogGroup group : groups.values()) {
+                Map<String, Set<String>> reachableDialogs = new TreeMap<>();
                 System.out.println("--------------------------------------------");
                 System.out.println("Group: " + group.groupName);
                 System.out.println("Root: " + group.rootElement);
@@ -180,11 +215,13 @@ public class DialogProcessor extends AbstractProcessor {
                 System.out.println("Message Type:" + group.message);
                 System.out.println("Dialogs: ");
                 for (DialogDescription dialog : group.dialogs.values()) {
+                    Set<String> reachableSteps = new TreeSet<>();
                     System.out.println("\tClass: " + dialog.element);
                     System.out.println("\tRoot: " + dialog.annotation.root());
                     System.out.println("\tSteps:");
                     for (StepDescription step : dialog.stepMethods.values()) {
                         System.out.println("\t\tName: " + step.name);
+                        reachableSteps.add(step.name);
 
                         if (step.contextIndex >= 0) {
                             System.out.println("\t\tContext Index: " + step.contextIndex);
@@ -212,11 +249,53 @@ public class DialogProcessor extends AbstractProcessor {
                         System.out.println();
                     }
                     System.out.println();
+                    reachableDialogs.put(dialog.element.toString(), reachableSteps);
+                }
+
+                // Validate that all defaults are reachable
+                for (DialogDescription dialog : group.dialogs.values()) {
+                    for (StepDescription step : dialog.stepMethods.values()) {
+                        String nextStep = null;
+                        if (step.annotation.step() != null && step.annotation.step().length() > 0) {
+                            nextStep = step.annotation.step();
+                        }
+
+                        String nextDialog = dialog.element.toString();
+                        try {
+                            if (step.annotation.dialog() != Object.class) {
+                                nextDialog = step.annotation.dialog().getCanonicalName();
+                            }
+                        } catch (MirroredTypeException m) {
+                            // This is how to actually get the type in preprocessing
+                            if (!m.getTypeMirror().toString().equals(Object.class.getCanonicalName())) {
+                                nextDialog = m.getTypeMirror().toString();
+                            }
+                        }
+
+                        Set<String> withinDialog = reachableDialogs.get(nextDialog);
+                        if (withinDialog == null) {
+                            System.err.print("Default next dialog is unreachable for ");
+                            System.err.print(dialog.element + "::" + step.name);
+                            System.err.println(": " + nextDialog);
+                            fatal = true;
+                            continue;
+                        }
+                        if (nextStep != null && !withinDialog.contains(nextStep)) {
+                            System.err.print("Default next step is unreachable for ");
+                            System.err.print(dialog.element + "::" + step.name);
+                            System.err.println(": " + nextDialog + "::" + nextStep);
+                            fatal = true;
+                            continue;
+                        }
+                        // Looks like this is reachable
+                    }
                 }
             }
-            System.out.println("--------------------------------------------");
 
-            // TODO validate all the defaults
+            if (fatal) {
+                System.err.println("Ending annotation processor early");
+                return true;
+            }
 
             // TODO write the codes
 
@@ -265,6 +344,7 @@ public class DialogProcessor extends AbstractProcessor {
         final String name;
         final ExecutableElement element;
         final DialogStep annotation;
+        final TypeMirror returnType;
         int contextIndex = -1;
         VariableElement contextElement;
         TypeMirror contextType;
@@ -272,10 +352,11 @@ public class DialogProcessor extends AbstractProcessor {
         VariableElement messageElement;
         TypeMirror messageType;
 
-        StepDescription(String name, ExecutableElement element, DialogStep annotation) {
+        StepDescription(String name, ExecutableElement element, DialogStep annotation, TypeMirror returnType) {
             this.name = name;
             this.element = element;
             this.annotation = annotation;
+            this.returnType = returnType;
         }
     }
 }
