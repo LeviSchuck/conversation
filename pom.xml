@@ -19,6 +19,7 @@
         <module>conversation-impl</module>
         <module>conversation-annotations</module>
         <module>conversation-processor</module>
+        <!-- TODO figure out how to make this sample not get included in jitpack -->
         <module>conversation-sample</module>
     </modules>
 
