@@ -2,7 +2,8 @@ package com.levischuck.conversation.processor;
 
 import com.google.auto.service.AutoService;
 import com.levischuck.conversation.annotations.*;
-import com.levischuck.conversation.core.GenResult;
+import com.levischuck.conversation.core.*;
+import com.squareup.javapoet.*;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -20,6 +21,14 @@ import java.util.*;
 @SupportedSourceVersion(SourceVersion.RELEASE_8)
 @AutoService(Processor.class)
 public class DialogProcessor extends AbstractProcessor {
+    private Filer filer;
+
+    @Override
+    public synchronized void init(ProcessingEnvironment processingEnvironment) {
+        super.init(processingEnvironment);
+        filer = processingEnvironment.getFiler();
+    }
+
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnvironment) {
         Map<String, DialogGroup> groups = new TreeMap<>();
@@ -41,11 +50,11 @@ public class DialogProcessor extends AbstractProcessor {
                     fatal = true;
                     continue;
                 }
-                String group = rootDialog.value();
+                String group = dialogGen.group();
                 if (groups.containsKey(group)) {
                     System.err.println("Group '" + group + "' already has root dialog: " + groups.get(group));
                 } else {
-                    groups.put(group, new DialogGroup(group, rootAnnotated));
+                    groups.put(group, new DialogGroup(group, rootAnnotated, rootDialog));
                 }
             }
 
@@ -290,11 +299,166 @@ public class DialogProcessor extends AbstractProcessor {
                         // Looks like this is reachable
                     }
                 }
+                if (group.root == null) {
+                    System.err.println("Group " + group + " does not have a RootDialog annotated dialog");
+                    fatal = true;
+                    continue;
+                }
             }
 
             if (fatal) {
                 System.err.println("Ending annotation processor early");
                 return true;
+            }
+
+            TypeName stringType = TypeName.get(String.class);
+            TypeName helperClass = ClassName.get(Helper.class);
+            for (DialogGroup group : groups.values()) {
+                TypeName dialogType = ParameterizedTypeName.get(ClassName.get(Dialog.class), TypeName.get(group.context), TypeName.get(group.message), stringType, stringType);
+                TypeName stepType = ParameterizedTypeName.get(ClassName.get(Step.class), TypeName.get(group.context), TypeName.get(group.message), stringType, stringType);
+
+                TypeName botInterface = ParameterizedTypeName.get(ClassName.get(Bot.class), TypeName.get(group.context), TypeName.get(group.message), stringType, stringType);
+                TypeName dialogMapType = ParameterizedTypeName.get(ClassName.get(Map.class), stringType, dialogType);
+                TypeName stepMapType = ParameterizedTypeName.get(ClassName.get(Map.class), stringType, stepType);
+                TypeSpec.Builder groupBuilder = TypeSpec.classBuilder(group.root.classPrefix() + "Bot")
+                        .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                        .addSuperinterface(botInterface)
+                        .addAnnotation(AnnotationSpec.builder(GroupImpl.class).addMember("value", "$S", group.groupName).build())
+                        .addField(FieldSpec.builder(dialogMapType, "dialogs", Modifier.PRIVATE, Modifier.FINAL).build())
+                        .addField(FieldSpec.builder(stringType, "root", Modifier.PRIVATE, Modifier.FINAL).build())
+                        .addMethod(MethodSpec.methodBuilder("rootDialog")
+                                .addModifiers(Modifier.PUBLIC)
+                                .addAnnotation(Override.class)
+                                .addStatement("return $N", "root")
+                                .returns(ClassName.get(String.class))
+                                .build())
+                        .addMethod(MethodSpec.methodBuilder("getDialogs")
+                                .addModifiers(Modifier.PUBLIC)
+                                .addAnnotation(Override.class)
+                                .addStatement("return $N", "dialogs")
+                                .returns(dialogMapType)
+                                .build());
+
+                MethodSpec.Builder groupConstructor = MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addStatement("$N = new $T()", "dialogs", ParameterizedTypeName.get(ClassName.get(TreeMap.class), stringType, dialogType))
+                        .addStatement("$N = $T.class.getCanonicalName()", "root", group.rootElement.asType());
+
+                // TODO maybe use better than dialog1, dialog2..
+                int dialogCount = 0;
+                for (DialogDescription dialog : group.dialogs.values()) {
+                    dialogCount++;
+                    String dialogImplClassName = group.root.classPrefix() + dialog.element.getSimpleName();
+                    TypeName dialogImplClassType = ClassName.get(group.root.packageName(), dialogImplClassName);
+                    TypeName dialogClassName = ClassName.get((TypeElement) dialog.element);
+                    TypeSpec.Builder dialogImplBuilder = TypeSpec.classBuilder(dialogImplClassName)
+                            .addAnnotation(AnnotationSpec.builder(DialogImpl.class).addMember("value", "$T.class", dialogClassName).build())
+                            .addField(FieldSpec.builder(stepMapType, "steps", Modifier.PRIVATE, Modifier.FINAL).build())
+                            .addField(FieldSpec.builder(botInterface, "bot", Modifier.PRIVATE, Modifier.FINAL).build())
+                            .addField(FieldSpec.builder(dialogClassName, "inner", Modifier.PRIVATE, Modifier.FINAL).build())
+                            .addSuperinterface(dialogType)
+                            .addMethod(MethodSpec.methodBuilder("rootStep")
+                                    .addModifiers(Modifier.PUBLIC)
+                                    .addAnnotation(Override.class)
+                                    .addStatement("return $S", dialog.annotation.root())
+                                    .returns(stringType)
+                                    .build())
+                            .addMethod(MethodSpec.methodBuilder("getSteps")
+                                    .addModifiers(Modifier.PUBLIC)
+                                    .addAnnotation(Override.class)
+                                    .addStatement("return this.$N", "steps")
+                                    .returns(stepMapType)
+                                    .build());
+
+                    MethodSpec.Builder dialogConstructor = MethodSpec.constructorBuilder()
+                            .addModifiers(Modifier.PUBLIC)
+                            .addParameter(botInterface, "bot")
+                            .addParameter(dialogClassName, "inner")
+                            .addStatement("this.$N = $N", "bot", "bot")
+                            .addStatement("this.$N = $N", "inner", "inner")
+                            .addStatement("this.$N = new $T()", "steps", ParameterizedTypeName.get(ClassName.get(TreeMap.class), stringType, stepType));
+
+                    for (StepDescription step : dialog.stepMethods.values()) {
+                        TypeName defaultNextDialogClass = dialogClassName;
+                        try {
+                            Class nextDialog = step.annotation.dialog();
+                            if (nextDialog != Object.class) {
+                                defaultNextDialogClass = TypeName.get(nextDialog);
+                            }
+                        } catch (MirroredTypeException m) {
+                            TypeMirror nextDialog = m.getTypeMirror();
+                            if (!nextDialog.toString().equals(Object.class.getCanonicalName())) {
+                                defaultNextDialogClass = TypeName.get(nextDialog);
+                            }
+                        }
+                        String defaultNextStep = step.annotation.step();
+                        if (defaultNextStep.length() == 0) {
+                            defaultNextStep = dialog.annotation.root();
+                        }
+
+                        String contextRef = "c";
+                        String messageRef = "m";
+
+                        final CodeBlock stepCall;
+                        if (step.messageIndex == -1 && step.contextIndex == -1) {
+                            // No context or step
+                            stepCall = CodeBlock.of("$N.$N()", "inner", step.name);
+                        } else if (step.messageIndex == 0) {
+                            if (step.contextIndex == 1) {
+                                stepCall = CodeBlock.of("$N.$N($N, $N)", "inner", step.name, messageRef, contextRef);
+                            } else {
+                                stepCall = CodeBlock.of("$N.$N($N)", "inner", step.name, messageRef);
+                            }
+                        } else if (step.contextIndex == 0) {
+                            if (step.messageIndex == 1) {
+                                stepCall = CodeBlock.of("$N.$N($N, $N)", "inner", step.name, contextRef, messageRef);
+                            } else {
+                                stepCall = CodeBlock.of("$N.$N($N)", "inner", step.name, contextRef);
+                            }
+                        } else {
+                            throw new RuntimeException("Unexpected scenario: context and message indexes are not 0 or 1");
+                        }
+
+                        final CodeBlock innerCall;
+                        if (step.returnType.getKind() == TypeKind.VOID) {
+                            innerCall = CodeBlock.of("$T.execute(() -> $L, $T.class, $S)", helperClass, stepCall, defaultNextDialogClass, defaultNextStep);
+                        } else {
+                            innerCall = stepCall;
+                        }
+
+                        dialogConstructor.addStatement(
+                                "this.$N.put($S, ($N, $N) -> $T.wrap($N, $N, $L, $T.class, $T.class, $S))",
+                                "steps",
+                                step.name,
+                                contextRef,
+                                messageRef,
+                                helperClass,
+                                "bot",
+                                contextRef,
+                                innerCall,
+                                dialogClassName,
+                                defaultNextDialogClass,
+                                defaultNextStep
+                        );
+                    }
+
+                    dialogImplBuilder.addMethod(dialogConstructor.build());
+
+                    // Write class
+                    JavaFile.builder(group.root.packageName(), dialogImplBuilder.build())
+                            .build()
+                            .writeTo(filer);
+
+                    groupConstructor
+                            .addParameter(ParameterSpec.builder(dialogClassName, "dialog" + dialogCount).build())
+                            .addStatement("$N.put($T.class.getCanonicalName(), new $T(this, $N))", "dialogs", dialogClassName, dialogImplClassType, "dialog" + dialogCount);
+                }
+
+                groupBuilder.addMethod(groupConstructor.build());
+                // TDOO wrap up with try?
+                JavaFile.builder(group.root.packageName(), groupBuilder.build())
+                        .build()
+                        .writeTo(filer);
             }
 
             // TODO write the codes
@@ -311,12 +475,14 @@ public class DialogProcessor extends AbstractProcessor {
         final String groupName;
         final Element rootElement;
         final Map<TypeMirror, DialogDescription> dialogs;
+        final RootDialog root;
         TypeMirror context;
         TypeMirror message;
 
-        DialogGroup(String groupName, Element rootElement) {
+        DialogGroup(String groupName, Element rootElement, RootDialog root) {
             this.groupName = groupName;
             this.rootElement = rootElement;
+            this.root = root;
             this.dialogs = new HashMap<>();
         }
 

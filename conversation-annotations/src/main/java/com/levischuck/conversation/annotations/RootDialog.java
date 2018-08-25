@@ -1,8 +1,9 @@
 package com.levischuck.conversation.annotations;
 
 /**
- * This would be the root dialog for the group, which is the value here
+ * Specify the class name here that should be generated for the bot
  */
 public @interface RootDialog {
-    String value();
+    String packageName();
+    String classPrefix() default "Gen";
 }

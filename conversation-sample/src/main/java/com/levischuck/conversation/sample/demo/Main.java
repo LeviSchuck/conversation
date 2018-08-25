@@ -4,7 +4,7 @@ import com.levischuck.conversation.annotations.*;
 import com.levischuck.conversation.core.GenResult;
 import static com.levischuck.conversation.core.GenResult.result;
 
-@RootDialog("demo")
+@RootDialog(packageName = "com.levischuck.conversation.sample.demo")
 @DialogGen(group = "demo", root = "first")
 public class Main {
     @DialogStep
