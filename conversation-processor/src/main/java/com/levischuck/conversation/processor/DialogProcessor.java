@@ -81,7 +81,7 @@ public class DialogProcessor extends AbstractProcessor {
                     continue;
                 }
                 DialogDescription dialogDescription = new DialogDescription(dialogAnnotated, dialogGen);
-                if (dialogGroup.dialogs.containsKey(dialogAnnotated.asType())) {
+                if (dialogGroup.dialogs.containsKey(dialogAnnotated.asType().toString())) {
                     System.err.println("Multiple DialogGen annotations on a single class is not supported");
                     continue;
                 }
@@ -208,7 +208,7 @@ public class DialogProcessor extends AbstractProcessor {
                     continue;
                 }
 
-                dialogGroup.dialogs.put(dialogAnnotated.asType(), dialogDescription);
+                dialogGroup.dialogs.put(dialogAnnotated.asType().toString(), dialogDescription);
             }
             if (fatal) {
                 System.err.println("Ending annotation processor early");
@@ -474,7 +474,7 @@ public class DialogProcessor extends AbstractProcessor {
     private static class DialogGroup {
         final String groupName;
         final Element rootElement;
-        final Map<TypeMirror, DialogDescription> dialogs;
+        final Map<String, DialogDescription> dialogs;
         final RootDialog root;
         TypeMirror context;
         TypeMirror message;
@@ -483,7 +483,7 @@ public class DialogProcessor extends AbstractProcessor {
             this.groupName = groupName;
             this.rootElement = rootElement;
             this.root = root;
-            this.dialogs = new HashMap<>();
+            this.dialogs = new TreeMap<>();
         }
 
         @Override

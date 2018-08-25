@@ -14,13 +14,25 @@ public class Builder {
     public static <C, M, D, S> Conversation<C, M, D, S> simple(
             Function<BotBuilder<C, M, D, S>, BotBuilder<C, M, D, S>> builder
     ) {
-        return new SimpleConversation<>(builder.apply(Builder.bot()).endBot());
+        return simple(builder.apply(Builder.bot()).endBot());
+    }
+
+    public static <C, M, D, S> Conversation<C, M, D, S> simple(
+            Bot<C, M, D, S> bot
+    ) {
+        return new SimpleConversation<>(bot);
     }
 
     public static <C extends MemorizingContext<C, D, S>, M, D, S> MemorizingConversation<C, M, D, S> memorized(
             Function<BotBuilder<C, M, D, S>, BotBuilder<C, M, D, S>> builder
     ) {
         return new PersistingConversation<>(simple(builder));
+    }
+
+    public static <C extends MemorizingContext<C, D, S>, M, D, S> MemorizingConversation<C, M, D, S> memorized(
+            Bot<C, M, D, S> bot
+    ) {
+        return new PersistingConversation<>(simple(bot));
     }
 
     public static class BotBuilder<C, M, D, S> {
