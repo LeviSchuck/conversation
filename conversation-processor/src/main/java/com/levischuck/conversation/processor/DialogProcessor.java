@@ -12,6 +12,7 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.MirroredTypeException;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import java.lang.reflect.Type;
 import java.util.*;
 
 @SupportedAnnotationTypes({
@@ -229,8 +230,12 @@ public class DialogProcessor extends AbstractProcessor {
                     System.out.println("\tRoot: " + dialog.annotation.root());
                     System.out.println("\tSteps:");
                     for (StepDescription step : dialog.stepMethods.values()) {
-                        System.out.println("\t\tName: " + step.name);
-                        reachableSteps.add(step.name);
+                        if (!step.annotation.callOnly()) {
+                            System.out.println("\t\tName: " + step.name);
+                            reachableSteps.add(step.name);
+                        } else {
+                            System.out.println("\t\tName: " + step.name + " (Call Only)");
+                        }
 
                         if (step.contextIndex >= 0) {
                             System.out.println("\t\tContext Index: " + step.contextIndex);
@@ -296,6 +301,7 @@ public class DialogProcessor extends AbstractProcessor {
                             fatal = true;
                             continue;
                         }
+
                         // Looks like this is reachable
                     }
                 }
@@ -313,18 +319,25 @@ public class DialogProcessor extends AbstractProcessor {
 
             TypeName stringType = TypeName.get(String.class);
             TypeName helperClass = ClassName.get(Helper.class);
+            TypeName classType = ClassName.get(Class.class);
+
             for (DialogGroup group : groups.values()) {
                 TypeName dialogType = ParameterizedTypeName.get(ClassName.get(Dialog.class), TypeName.get(group.context), TypeName.get(group.message), stringType, stringType);
+                TypeName annotatedDialogType =  ParameterizedTypeName.get(ClassName.get(AnnotatedDialog.class), TypeName.get(group.context), TypeName.get(group.message));
                 TypeName stepType = ParameterizedTypeName.get(ClassName.get(Step.class), TypeName.get(group.context), TypeName.get(group.message), stringType, stringType);
+                TypeName callType = ParameterizedTypeName.get(ClassName.get(AnnotatedCall.class), TypeName.get(group.context), TypeName.get(group.message));
 
-                TypeName botInterface = ParameterizedTypeName.get(ClassName.get(Bot.class), TypeName.get(group.context), TypeName.get(group.message), stringType, stringType);
+                TypeName botInterface = ParameterizedTypeName.get(ClassName.get(AnnotatedBot.class), TypeName.get(group.context), TypeName.get(group.message));
                 TypeName dialogMapType = ParameterizedTypeName.get(ClassName.get(Map.class), stringType, dialogType);
+                TypeName annotatedDialogMapType = ParameterizedTypeName.get(ClassName.get(Map.class), classType, annotatedDialogType);
                 TypeName stepMapType = ParameterizedTypeName.get(ClassName.get(Map.class), stringType, stepType);
+                TypeName callMapType = ParameterizedTypeName.get(ClassName.get(Map.class), stringType, callType);
                 TypeSpec.Builder groupBuilder = TypeSpec.classBuilder(group.root.classPrefix() + "Bot")
                         .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                         .addSuperinterface(botInterface)
                         .addAnnotation(AnnotationSpec.builder(GroupImpl.class).addMember("value", "$S", group.groupName).build())
                         .addField(FieldSpec.builder(dialogMapType, "dialogs", Modifier.PRIVATE, Modifier.FINAL).build())
+                        .addField(FieldSpec.builder(annotatedDialogMapType, "annotatedDialogs", Modifier.PRIVATE, Modifier.FINAL).build())
                         .addField(FieldSpec.builder(stringType, "root", Modifier.PRIVATE, Modifier.FINAL).build())
                         .addMethod(MethodSpec.methodBuilder("rootDialog")
                                 .addModifiers(Modifier.PUBLIC)
@@ -332,16 +345,29 @@ public class DialogProcessor extends AbstractProcessor {
                                 .addStatement("return $N", "root")
                                 .returns(ClassName.get(String.class))
                                 .build())
+                        .addMethod(MethodSpec.methodBuilder("rootDialogClass")
+                                .addModifiers(Modifier.PUBLIC)
+                                .addAnnotation(Override.class)
+                                .addStatement("return $T.class", group.rootElement.asType())
+                                .returns(ClassName.get(Class.class))
+                                .build())
                         .addMethod(MethodSpec.methodBuilder("getDialogs")
                                 .addModifiers(Modifier.PUBLIC)
                                 .addAnnotation(Override.class)
                                 .addStatement("return $N", "dialogs")
                                 .returns(dialogMapType)
+                                .build())
+                        .addMethod(MethodSpec.methodBuilder("getAnnotatedDialogs")
+                                .addModifiers(Modifier.PUBLIC)
+                                .addAnnotation(Override.class)
+                                .addStatement("return $N", "annotatedDialogs")
+                                .returns(annotatedDialogMapType)
                                 .build());
 
                 MethodSpec.Builder groupConstructor = MethodSpec.constructorBuilder()
                         .addModifiers(Modifier.PUBLIC)
                         .addStatement("$N = new $T()", "dialogs", ParameterizedTypeName.get(ClassName.get(TreeMap.class), stringType, dialogType))
+                        .addStatement("$N = new $T()", "annotatedDialogs", ParameterizedTypeName.get(ClassName.get(HashMap.class), classType, annotatedDialogType))
                         .addStatement("$N = $T.class.getCanonicalName()", "root", group.rootElement.asType());
 
                 // TODO maybe use better than dialog1, dialog2..
@@ -353,10 +379,11 @@ public class DialogProcessor extends AbstractProcessor {
                     TypeName dialogClassName = ClassName.get((TypeElement) dialog.element);
                     TypeSpec.Builder dialogImplBuilder = TypeSpec.classBuilder(dialogImplClassName)
                             .addAnnotation(AnnotationSpec.builder(DialogImpl.class).addMember("value", "$T.class", dialogClassName).build())
+                            .addField(FieldSpec.builder(callMapType, "calls", Modifier.PRIVATE, Modifier.FINAL).build())
                             .addField(FieldSpec.builder(stepMapType, "steps", Modifier.PRIVATE, Modifier.FINAL).build())
                             .addField(FieldSpec.builder(botInterface, "bot", Modifier.PRIVATE, Modifier.FINAL).build())
                             .addField(FieldSpec.builder(dialogClassName, "inner", Modifier.PRIVATE, Modifier.FINAL).build())
-                            .addSuperinterface(dialogType)
+                            .addSuperinterface(annotatedDialogType)
                             .addMethod(MethodSpec.methodBuilder("rootStep")
                                     .addModifiers(Modifier.PUBLIC)
                                     .addAnnotation(Override.class)
@@ -368,6 +395,12 @@ public class DialogProcessor extends AbstractProcessor {
                                     .addAnnotation(Override.class)
                                     .addStatement("return this.$N", "steps")
                                     .returns(stepMapType)
+                                    .build())
+                            .addMethod(MethodSpec.methodBuilder("getCalls")
+                                    .addModifiers(Modifier.PUBLIC)
+                                    .addAnnotation(Override.class)
+                                    .addStatement("return this.$N", "calls")
+                                    .returns(callMapType)
                                     .build());
 
                     MethodSpec.Builder dialogConstructor = MethodSpec.constructorBuilder()
@@ -376,9 +409,12 @@ public class DialogProcessor extends AbstractProcessor {
                             .addParameter(dialogClassName, "inner")
                             .addStatement("this.$N = $N", "bot", "bot")
                             .addStatement("this.$N = $N", "inner", "inner")
-                            .addStatement("this.$N = new $T()", "steps", ParameterizedTypeName.get(ClassName.get(TreeMap.class), stringType, stepType));
+                            .addStatement("this.$N = new $T()", "steps", ParameterizedTypeName.get(ClassName.get(TreeMap.class), stringType, stepType))
+                            .addStatement("this.$N = new $T()", "calls", ParameterizedTypeName.get(ClassName.get(HashMap.class), stringType, callType));
 
+                    int stepCount = 0;
                     for (StepDescription step : dialog.stepMethods.values()) {
+                        stepCount++;
                         TypeName defaultNextDialogClass = dialogClassName;
                         try {
                             Class nextDialog = step.annotation.dialog();
@@ -421,25 +457,31 @@ public class DialogProcessor extends AbstractProcessor {
 
                         final CodeBlock innerCall;
                         if (step.returnType.getKind() == TypeKind.VOID) {
-                            innerCall = CodeBlock.of("$T.execute(() -> $L, $T.class, $S)", helperClass, stepCall, defaultNextDialogClass, defaultNextStep);
+                            innerCall = CodeBlock.of("$T.toCall(() -> $L, $T.class, $S)", helperClass, stepCall, defaultNextDialogClass, defaultNextStep);
                         } else {
-                            innerCall = stepCall;
+                            innerCall = CodeBlock.of("($N, $N) -> $L", contextRef, messageRef, stepCall);
                         }
 
-                        dialogConstructor.addStatement(
-                                "this.$N.put($S, ($N, $N) -> $T.wrap($N, $N, $L, $T.class, $T.class, $S))",
-                                "steps",
-                                step.name,
-                                contextRef,
-                                messageRef,
-                                helperClass,
-                                "bot",
-                                contextRef,
-                                innerCall,
-                                dialogClassName,
-                                defaultNextDialogClass,
-                                defaultNextStep
-                        );
+                        dialogConstructor.addComment("$N", step.name);
+                        dialogConstructor.addStatement("final $T $N = $L", callType, "call" + stepCount, innerCall);
+                        dialogConstructor.addStatement("this.$N.put($S, $N)", "calls", step.name, "call" + stepCount);
+                        if (!step.annotation.callOnly()) {
+                            dialogConstructor.addStatement(
+                                    "this.$N.put($S, ($N, $N) -> $T.wrap($N, $N, $N, $N, $T.class, $T.class, $S))",
+                                    "steps",
+                                    step.name,
+                                    contextRef,
+                                    messageRef,
+                                    helperClass,
+                                    "bot",
+                                    contextRef,
+                                    messageRef,
+                                    "call" + stepCount,
+                                    dialogClassName,
+                                    defaultNextDialogClass,
+                                    defaultNextStep
+                            );
+                        }
                     }
 
                     dialogImplBuilder.addMethod(dialogConstructor.build());
@@ -451,7 +493,10 @@ public class DialogProcessor extends AbstractProcessor {
 
                     groupConstructor
                             .addParameter(ParameterSpec.builder(dialogClassName, "dialog" + dialogCount).build())
-                            .addStatement("$N.put($T.class.getCanonicalName(), new $T(this, $N))", "dialogs", dialogClassName, dialogImplClassType, "dialog" + dialogCount);
+                            .addComment("$T", dialogClassName)
+                            .addStatement("final $T $N = new $T(this, $N)", dialogImplClassType, "dialogImpl" + dialogCount, dialogImplClassType, "dialog" + dialogCount)
+                            .addStatement("$N.put($T.class, $N)", "annotatedDialogs", dialogClassName, "dialogImpl" + dialogCount)
+                            .addStatement("$N.put($T.class.getCanonicalName(), $N)", "dialogs", dialogClassName, "dialogImpl" + dialogCount);
                 }
 
                 groupBuilder.addMethod(groupConstructor.build());

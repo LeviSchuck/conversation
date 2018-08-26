@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.levischuck.conversation.core.GenResult.result;
+import static com.levischuck.conversation.core.GenResult.call;
 
 @DialogGen(group = "demo", root = "first")
 public class Secondary {
@@ -23,6 +24,9 @@ public class Secondary {
             case "5":
             case "6":
             case "7":
+            case "8":
+            case "9":
+            case "10":
                 log.info("You said: " + message);
                 break;
         }
@@ -34,18 +38,31 @@ public class Secondary {
             case "5": return result(context, Main.class);
             case "6": return result(context, "third");
             case "7": return result(context, Main.class, "extra");
+            case "8": return call("secondCall");
+            case "9": return call(Main.class, "extraCall");
+            case "10": return call(context, Main.class, "extraCall");
         }
-        log.info("Try a number from 1 to 7");
+        log.info("Try a number from 1 to 10");
         return result();
     }
 
     @DialogStep(step="first")
     public void second() {
-        log.info("Neat. Now try a number from 1 to 7");
+        log.info("Neat. Now try a number from 1 to 10");
     }
 
     @DialogStep(step="first")
     public void third() {
-        log.info("Cool. Now try a number from 1 to 7");
+        log.info("Cool. Now try a number from 1 to 10");
+    }
+
+    @DialogStep(step="first", callOnly = true)
+    public void secondCall() {
+        log.info("Neat. Now try a number from 1 to 10");
+    }
+
+    @DialogStep(step="first", callOnly = true)
+    public void thirdCall() {
+        log.info("Cool. Now try a number from 1 to 10");
     }
 }

@@ -28,6 +28,12 @@ public class Application {
         convo.converse(context, "hello");
         convo.converse(context, "7");
         convo.converse(context, "hello");
+        convo.converse(context, "hello");
+        convo.converse(context, "hello");
+        convo.converse(context, "hello");
+        convo.converse(context, "8");
+        convo.converse(context, "9");
+        convo.converse(context, "10");
 
         System.exit(0);
     }

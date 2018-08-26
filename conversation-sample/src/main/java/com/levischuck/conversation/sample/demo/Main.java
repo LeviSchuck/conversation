@@ -36,4 +36,9 @@ public class Main {
     public void extra() {
         log.info("Congratulations, you found the bonus room, going back to first");
     }
+
+    @DialogStep(dialog = Secondary.class, step="first", callOnly = true)
+    public void extraCall() {
+        log.info("Congratulations, you found the bonus room, going back");
+    }
 }

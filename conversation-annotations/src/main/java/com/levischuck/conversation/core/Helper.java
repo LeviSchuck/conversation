@@ -9,10 +9,18 @@ public class Helper {
         return GenResult.result(defaultNextDialog, defaultNextStep);
     }
 
+    public static <C, M> AnnotatedCall<C, M> toCall(Runnable method, Class defaultNextDialog, String defaultNextStep) {
+        return (c, m) -> {
+            method.run();
+            return GenResult.result(c, defaultNextDialog, defaultNextStep);
+        };
+    }
+
     public static <C, M> StepResult<C, M, String, String> wrap(
-            Bot<C, M, String, String> bot,
+            AnnotatedBot<C, M> bot,
             C context,
-            GenResult<C> result,
+            M message,
+            AnnotatedCall<C, M> call,
             Class dialog,
             Class defaultNextDialog,
             String defaultNextStep
@@ -20,11 +28,15 @@ public class Helper {
         Logger log = LoggerFactory.getLogger(dialog);
 
         // Step up defaults
+        Class nextDialogClass = defaultNextDialog;
         String nextDialog = defaultNextDialog.getCanonicalName();
         String nextStep = defaultNextStep;
 
+        GenResult<C> result = call.call(context, message);
+
         if (result.getDialog() != null) {
-            nextDialog = result.getDialog().getCanonicalName();
+            nextDialogClass = result.getDialog();
+            nextDialog = nextDialogClass.getCanonicalName();
             nextStep = null;
         }
 
@@ -36,7 +48,7 @@ public class Helper {
             context = result.getContext();
         }
 
-        Dialog<C, M, String, String> foundNextDialog = bot.getDialogs().get(nextDialog);
+        AnnotatedDialog<C, M> foundNextDialog = bot.getAnnotatedDialogs().get(nextDialogClass);
 
         if (foundNextDialog == null) {
             log.warn("Dialog: {} could not be found within this bot, defaulting to root", nextDialog);
@@ -44,11 +56,21 @@ public class Helper {
             nextDialog = bot.rootDialog();
             nextStep = bot.getDialogs().get(nextDialog).rootStep();
         } else if (nextStep != null) {
-            Step<C, M, String, String> foundNextStep = foundNextDialog.getSteps().get(nextStep);
-
-            if (foundNextStep == null) {
-                log.warn("Step: {}::{} could not be found, defaulting to root", nextDialog, nextStep);
-                nextStep = foundNextDialog.rootStep();
+            if (result.isCall()) {
+                AnnotatedCall<C, M> foundNextCall = foundNextDialog.getCalls().get(nextStep);
+                if (foundNextCall == null) {
+                    log.warn("Call: {}::{} could not be found, defaulting to root", nextDialog, nextStep);
+                    nextStep = foundNextDialog.rootStep();
+                } else {
+                    log.trace("Next call: {}::{}", nextDialog, nextStep);
+                    return wrap(bot, context, message, foundNextCall, nextDialogClass, nextDialogClass, nextStep);
+                }
+            } else {
+                Step<C, M, String, String> foundNextStep = foundNextDialog.getSteps().get(nextStep);
+                if (foundNextStep == null) {
+                    log.warn("Step: {}::{} could not be found, defaulting to root", nextDialog, nextStep);
+                    nextStep = foundNextDialog.rootStep();
+                }
             }
         } else {
             nextStep = foundNextDialog.rootStep();

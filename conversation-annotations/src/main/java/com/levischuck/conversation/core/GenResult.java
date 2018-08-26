@@ -11,6 +11,7 @@ public class GenResult<C> {
     private C context;
     private Class dialog;
     private String step;
+    private boolean call;
 
     public static <C> GenResult<C> result() {
         return new GenResult<>();
@@ -51,6 +52,21 @@ public class GenResult<C> {
         return result.withContext(context).withDialog(dialog).withStep(step);
     }
 
+    public static <C> GenResult<C> call(String step) {
+        GenResult<C> result = new GenResult<>();
+        return result.withStep(step).withCall(true);
+    }
+
+    public static <C> GenResult<C> call(Class dialog, String step) {
+        GenResult<C> result = new GenResult<>();
+        return result.withDialog(dialog).withStep(step).withCall(true);
+    }
+
+    public static <C> GenResult<C> call(C context, Class dialog, String step) {
+        GenResult<C> result = new GenResult<>();
+        return result.withContext(context).withDialog(dialog).withStep(step).withCall(true);
+    }
+
     public C getContext() {
         return context;
     }
@@ -75,6 +91,14 @@ public class GenResult<C> {
         this.step = step;
     }
 
+    public boolean isCall() {
+        return call;
+    }
+
+    public void setCall(boolean call) {
+        this.call = call;
+    }
+
     private GenResult<C> withContext(C context) {
         setContext(context);
         return this;
@@ -87,6 +111,11 @@ public class GenResult<C> {
 
     private GenResult<C> withStep(String step) {
         setStep(step);
+        return this;
+    }
+
+    private GenResult<C> withCall(boolean call) {
+        setCall(call);
         return this;
     }
 

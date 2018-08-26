@@ -38,4 +38,10 @@ public @interface DialogStep {
      * @return
      */
     String step() default "";
+
+    /**
+     * Is this only callable internally?
+     * @return
+     */
+    boolean callOnly() default false;
 }
